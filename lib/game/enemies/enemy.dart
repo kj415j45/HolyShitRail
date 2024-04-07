@@ -47,6 +47,18 @@ abstract base class BattleEnemy<E extends Enemy> extends BattleUnit<E>
     hp = enemy.currentState.maxHp.modifiedValue;
   }
 
+  @override
+  DefenderDamageDetail takeDamage(AttackerDamageDetail damage) {
+    return DefenderDamageDetail(
+      base: damage,
+      def: enemy.currentState.def.modifiedValue,
+      resist: enemy.currentState.combatTypeResistance.getResistance(
+        damage.combatType,
+      ),
+      broken: broke,
+    );
+  }
+
   void takeToughnessDamage(double damageToToughness) {
     toughness -= damageToToughness;
     if (toughness <= 0) {
@@ -74,7 +86,7 @@ abstract base class BattleEnemy<E extends Enemy> extends BattleUnit<E>
 
 class EnemyStaticStats extends UnitStaticStats implements JsonSerializable {
   final int level;
-  final int maxHp;
+  final double maxHp;
   final double atk;
   final double def;
   final double spd;
@@ -101,7 +113,7 @@ class EnemyStaticStats extends UnitStaticStats implements JsonSerializable {
 
   @override
   Map toJson() {
-    return {
+    return JsonSerializable.auto({
       'level': level,
       'maxHp': maxHp,
       'atk': atk,
@@ -111,7 +123,7 @@ class EnemyStaticStats extends UnitStaticStats implements JsonSerializable {
       'effectResistance': effectResistance,
       'weakness': weakness.map((e) => e.toJson()).toList(),
       'maxToughness': maxToughness,
-    };
+    });
   }
 }
 

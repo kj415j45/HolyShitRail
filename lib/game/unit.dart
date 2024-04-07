@@ -4,7 +4,7 @@ import 'package:holyshitrail/utils/enum_value.dart';
 import 'package:holyshitrail/utils/functions.dart';
 
 abstract class Unit implements JsonSerializable {
-  final String id;
+  final dynamic id;
   final String name;
   final UnitStaticStats staticStats;
   final UnitCurrentState currentState;
@@ -22,7 +22,7 @@ abstract class Unit implements JsonSerializable {
 abstract class BattleUnit<U extends Unit> extends Unit
     implements JsonSerializable {
   final U prototype;
-  late int hp;
+  late double hp;
   bool selectable;
 
   BattleUnit(
@@ -37,6 +37,8 @@ abstract class BattleUnit<U extends Unit> extends Unit
         ) {
     hp = prototype.currentState.maxHp.modifiedValue;
   }
+
+  DefenderDamageDetail takeDamage(AttackerDamageDetail damage);
 }
 
 abstract class UnitStaticStats implements JsonSerializable {
@@ -44,7 +46,7 @@ abstract class UnitStaticStats implements JsonSerializable {
 }
 
 abstract class UnitCurrentState implements JsonSerializable {
-  LinearModifiableValue<int> maxHp;
+  LinearModifiableValue<double> maxHp;
   UnitCurrentState({
     required this.maxHp,
   });

@@ -5,7 +5,7 @@ import 'package:holyshitrail/utils/enum_value.dart';
 
 /// A value that can be modified linearly by a list of modifiers.
 /// modifiedValue = originalValue + sum(modifiers)
-class LinearModifiableValue<O extends num> {
+class LinearModifiableValue<O extends num> implements JsonSerializable<List> {
   final O? minValue;
   final O? maxValue;
   final O originalValue;
@@ -16,17 +16,48 @@ class LinearModifiableValue<O extends num> {
     this.maxValue,
     this.minValue,
   });
+
   O get modifiedValue {
-    final result = modifiers.fold(
-      originalValue,
-      (value, modifier) => value + modifier.modify(originalValue) as O,
-    );
+    double multiplier = 1;
+    double constant = 0;
+
+    for (final modifier in modifiers) {
+      multiplier += modifier.multiplier;
+      constant += modifier.constant;
+    }
+
+    final result = originalValue * multiplier + constant;
+
     if (maxValue != null && result > maxValue!) {
       return maxValue!;
     } else if (minValue != null && result < minValue!) {
       return minValue!;
     } else {
-      return result;
+      return result as O;
+    }
+  }
+
+  /// Return modified value without those modifiers that are marked as fromConvertedValue.
+  O operator ~() {
+    double multiplier = 1;
+    double constant = 0;
+
+    for (final modifier in modifiers) {
+      if (modifier.fromConvertedValue) {
+        continue;
+      }
+      multiplier += modifier.multiplier;
+      constant += modifier.constant;
+    }
+
+    final result = originalValue * multiplier + constant;
+
+    if (maxValue != null && result > maxValue!) {
+      return maxValue!;
+    } else if (minValue != null && result < minValue!) {
+      return minValue!;
+    } else {
+      return result as O;
     }
   }
 
@@ -37,28 +68,58 @@ class LinearModifiableValue<O extends num> {
   void operator -(LinearValueModifier<O> modifier) {
     modifiers.remove(modifier);
   }
+
+  @override
+  List toJson() => [originalValue, modifiedValue];
 }
 
 /// Each LinearValueModifier apply a linear modification to a value.
-/// Return the diff to be added to the original value.
-/// For example:
-/// - A modifier that `+10%` to the value should return `value * 0.1`.
-/// - A modifier that `-5` should return `-5`.
-/// - A modifier that `+10% + 5` should return `value * 0.1 + 5`.
-abstract interface class LinearValueModifier<V extends num> {
-  V modify(V originValue) => originValue;
+class LinearValueModifier<V extends num> implements JsonSerializable<String> {
+  final double multiplier;
+  final double constant;
 
-  factory LinearValueModifier.fromFunction(V Function(V) modifyFunction) {
-    return _LinearValueModifier<V>(modifyFunction);
+  final bool fromConvertedValue;
+
+  LinearValueModifier({
+    this.multiplier = 1,
+    this.constant = 0,
+    this.fromConvertedValue = false,
+  });
+
+  /// Create from a string expression.
+  /// Example:
+  /// - "25%" => LinearValueModifier(0.25, 0)
+  /// - "+42" => LinearValueModifier(0, 42)
+  /// - "25% +42" => LinearValueModifier(0.25, 42)
+  /// - "-10%" => LinearValueModifier(-0.1, 0)
+  /// - "! 25%" => LinearValueModifier(0.25, 0, fromConvertedValue: true)
+  factory LinearValueModifier.from(String expression) {
+    final parts = expression.split(' ');
+    double multiplier = 0;
+    double constant = 0;
+    bool fromConvertedValue = false;
+    for (final part in parts) {
+      if (part == '!') {
+        fromConvertedValue = true;
+        continue;
+      }
+      if (part.endsWith('%')) {
+        multiplier = double.parse(part.substring(0, part.length - 1)) / 100;
+      } else {
+        constant = double.parse(part);
+      }
+    }
+    return LinearValueModifier(
+      multiplier: multiplier,
+      constant: constant,
+      fromConvertedValue: fromConvertedValue,
+    );
   }
-}
-
-class _LinearValueModifier<V extends num> implements LinearValueModifier<V> {
-  final V Function(V) modifyFunction;
-  _LinearValueModifier(this.modifyFunction);
 
   @override
-  V modify(V originValue) => modifyFunction(originValue);
+  String toJson() {
+    return '${fromConvertedValue ? '! ' : ''}${multiplier * 100}%${constant >= 0 ? ' +' : ' -'}$constant';
+  }
 }
 
 /// 伤害元素
@@ -91,6 +152,9 @@ enum CombatType implements EnumValue<int> {
 
   @override
   toJson() => value;
+
+  factory CombatType.fromJson(int value) =>
+      values.firstWhere((e) => e.value == value);
 }
 
 class CombatTypeBuff implements JsonSerializable {
@@ -193,7 +257,7 @@ enum DamageType implements EnumValue<int> {
   followUp(4),
 
   /// 暴击伤害
-  critical(5),
+  // critical(5),
 
   /// 附加伤害
   addUp(6),
@@ -205,6 +269,9 @@ enum DamageType implements EnumValue<int> {
 
   @override
   int toJson() => value;
+
+  factory DamageType.fromJson(int value) =>
+      values.firstWhere((e) => e.value == value);
 }
 
 /// 伤害详情
@@ -230,20 +297,51 @@ class AttackerDamageDetail implements JsonSerializable {
   /// 伤害减弱
   double weaken;
 
-  /// 是否暴击
+  /// 强制暴击
+  bool? forceCrit;
+
   bool crit = false;
 
   /// 韧性伤害
   double toughness;
 
-  /// 最终伤害
-  double get damage =>
-      base * // 基础区
-      (1 + critRate * critDamage * (crit ? 1 : 0)) * // 暴击区
-      (1 + combatTypeBuff) * // 增伤区
-      (1 - weaken); // 造成伤害减少
+  /// 等级
+  int level;
+
+  /// 伤害锁定
+  bool locked = false;
+
+  double? _damage;
+
+  /// 未锁定时返回实时计算的伤害（暴击情况重新计算）
+  /// 锁定后返回锁定时的伤害
+  double get damage {
+    if (locked) {
+      return _damage!;
+    }
+    if (forceCrit != null) {
+      crit = forceCrit!;
+    } else {
+      crit = Random().nextDouble() < critRate;
+    }
+    _damage = base * // 基础区
+        (1 + critRate * critDamage * (crit ? 1 : 0)) * // 暴击区
+        (1 + combatTypeBuff) * // 增伤区
+        (1 - weaken); // 造成伤害减少
+    return _damage!;
+  }
+
+  /// 伤害（锁定暴击）
+  double get lockDamage {
+    try {
+      return damage;
+    } finally {
+      locked = true;
+    }
+  }
 
   AttackerDamageDetail({
+    required this.level,
     required this.base,
     required this.critRate,
     required this.critDamage,
@@ -252,28 +350,73 @@ class AttackerDamageDetail implements JsonSerializable {
     required this.damageTypes,
     required this.combatTypeBuff,
     this.toughness = 0,
-    bool? forceCrit,
-  }) {
-    if (forceCrit != null) {
-      crit = forceCrit;
-    } else {
-      crit = Random().nextDouble() < critRate;
-    }
-  }
+    this.forceCrit,
+  });
 
   @override
   toJson() {
-    return {
+    return JsonSerializable.auto({
       'base': base,
       'critRate': critRate,
       'critDamage': critDamage,
-      'type': combatType.toJson(),
-      'damageTypes': damageTypes.map((e) => e.toJson()).toList(),
+      'type': combatType,
+      'damageTypes': damageTypes,
       'combatTypeBuff': combatTypeBuff,
       'weaken': weaken,
-      'crit': crit,
+      if (locked) 'crit': crit,
+      if (locked) 'damage': _damage,
+    });
+  }
+}
+
+class DefenderDamageDetail implements JsonSerializable {
+  /// 输出端伤害
+  AttackerDamageDetail base;
+
+  /// 防御力
+  double def;
+
+  /// 抗性（加算）
+  double resist;
+
+  /// 易伤（加算）
+  double vulnerability;
+
+  /// 伤害减免（乘算）
+  double mitigation;
+
+  /// 韧性已击破
+  bool broken;
+
+  DefenderDamageDetail({
+    required this.base,
+    required this.def,
+    this.resist = 0,
+    this.vulnerability = 0,
+    this.mitigation = 1,
+    this.broken = true,
+  });
+
+  /// 最终伤害
+  double get damage =>
+      base.lockDamage * // 基础区
+      (1 - (def / (def + 200 + 10 * base.level))) * // 防御区
+      (1 - min(max(-1, resist), 0.9)) * // 抗性区
+      (1 + vulnerability) * // 易伤区
+      mitigation * // 减免区
+      (broken ? 1 : 0.9); // 韧性区
+
+  @override
+  toJson() {
+    return JsonSerializable.auto({
+      'base': base,
+      'def': def,
+      'resist': resist,
+      'vulnerability': vulnerability,
+      'mitigation': mitigation,
+      'broken': broken,
       'damage': damage,
-    };
+    });
   }
 }
 

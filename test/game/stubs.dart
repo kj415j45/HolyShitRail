@@ -1,9 +1,9 @@
 import 'package:holyshitrail/game/base_definitions.dart';
 import 'package:holyshitrail/game/characters/character.dart';
 
-final class StubCharacter extends Character {
+final class StubCharacter extends Avatar {
   StubCharacter({
-    super.id = 'stub',
+    super.id = CharacterId.unknown,
     super.name = 'Stub',
     super.path = CharacterPath.destruction,
     super.combatType = CombatType.physical,

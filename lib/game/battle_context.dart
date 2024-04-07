@@ -1,12 +1,15 @@
 import 'dart:convert';
 
+import 'package:holyshitrail/game/base_definitions.dart';
 import 'package:holyshitrail/game/battle_event.dart';
+import 'package:holyshitrail/game/battle_events.dart';
 import 'package:holyshitrail/game/characters/character.dart';
 import 'package:holyshitrail/game/enemies/enemy.dart';
 import 'package:holyshitrail/game/unit.dart';
+import 'package:holyshitrail/global_configs.dart';
 import 'package:logger/logger.dart';
 
-final logger = Logger(filter: DevelopmentFilter(), level: Level.all);
+final logger = Logger(filter: DevelopmentFilter(), level: logLevel);
 
 class BattleContext {
   final List<BattleCharacter> teammates;
@@ -24,13 +27,13 @@ class BattleContext {
 
   void dispatch(BattleEvent event) {
     if (transformers.isNotEmpty) {
-      logger.d("Transformers: ${transformers.length}");
-      logger.d(event.prettyLog());
+      logger.t("Transformers: ${transformers.length}");
+      logger.t(event.prettyLog());
       for (var transformer in transformers) {
         event = transformer.transform(event);
-        logger.d(event.prettyLog());
+        logger.t(event.prettyLog());
       }
-      logger.d("Transform end");
+      logger.t("Transform end");
     }
 
     for (var listener in listeners) {
@@ -40,7 +43,7 @@ class BattleContext {
     events.add(event);
     switch (event.type) {
       case BattleEventType.log:
-        logger.t(event.prettyLog());
+        logger.d(event.prettyLog());
         break;
       case BattleEventType.error:
         logger.e(event.prettyLog());
@@ -54,6 +57,18 @@ class BattleContext {
     }
     for (var listener in listeners) {
       listener.postBattleEvent(event);
+    }
+    switch (event.type) {
+      case BattleEventType.unitDamage:
+        var table = event.payload.value as DamageTable;
+        table.damages.forEach((target, value) {
+          // 锁定输出端暴击情况
+          value.lockDamage;
+          final report = target.takeDamage(value);
+          dispatch(TakeDamageEvent(event.source, target, report));
+        });
+        break;
+      default:
     }
   }
 
@@ -75,6 +90,7 @@ class BattleContext {
 
   void addTeammate(BattleCharacter character) {
     teammates.add(character);
+    character.onJoinBattle(this);
     // TODO event
   }
 

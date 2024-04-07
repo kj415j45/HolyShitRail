@@ -1,15 +1,18 @@
 import 'package:holyshitrail/game/ability.dart';
 import 'package:holyshitrail/game/base_definitions.dart';
+import 'package:holyshitrail/game/battle_context.dart';
+import 'package:holyshitrail/game/characters/1.0/trailblazer_destruction/character.dart';
 import 'package:holyshitrail/game/unit.dart';
+import 'package:holyshitrail/global_configs.dart';
 import 'package:holyshitrail/utils/enum_value.dart';
 
-abstract base class Character<State extends CharacterCurrentState>
+abstract base class Avatar<State extends CharacterCurrentState>
     implements Unit, JsonSerializable {
   final CharacterPath path;
   final CombatType combatType;
 
   @override
-  final String id;
+  final CharacterId id;
   @override
   final String name;
   @override
@@ -19,7 +22,7 @@ abstract base class Character<State extends CharacterCurrentState>
   @override
   final List<Ability> abilities = [];
 
-  Character({
+  Avatar({
     required this.path,
     required this.combatType,
     required this.id,
@@ -27,15 +30,42 @@ abstract base class Character<State extends CharacterCurrentState>
     required this.staticStats,
   });
 
+  static fromJson(
+    Map<String, dynamic> json, {
+    int level = 80,
+  }) {
+    final id = CharacterId.fromJson(json['id']);
+    final name = currentLocale.getCharacterName(id);
+    final path = CharacterPath.fromJson(json['path']);
+    final combatType = CombatType.fromJson(json['combatType']);
+
+    final stats =
+        CharacterStaticStats.fromJson((json['stats'] as List).firstWhere(
+      (e) => e['level'] == level,
+    ));
+
+    switch (id) {
+      case CharacterId.trailblazerDestruction:
+        return TrailblazerDCharacter(
+          id: id,
+          name: name,
+          path: path,
+          combatType: combatType,
+          staticStats: stats,
+        );
+      default:
+    }
+  }
+
   @override
   toJson() {
-    return {
-      'path': path.toJson(),
+    return JsonSerializable.auto({
       'id': id,
       'name': name,
-      'staticStats': staticStats.toJson(),
-      'currentState': currentState.toJson(),
-    };
+      'path': path,
+      'stats': staticStats,
+      'state': currentState,
+    });
   }
 
   AttackerDamageDetail calculateDamage({
@@ -46,6 +76,7 @@ abstract base class Character<State extends CharacterCurrentState>
   }) {
     combatType = combatType ?? this.combatType;
     return AttackerDamageDetail(
+      level: staticStats.level,
       base: baseDamage,
       critRate: currentState.crt.modifiedValue,
       critDamage: currentState.crtDmg.modifiedValue,
@@ -57,26 +88,27 @@ abstract base class Character<State extends CharacterCurrentState>
   }
 }
 
-abstract base class BattleCharacter<C extends Character> extends BattleUnit<C>
+abstract base class BattleCharacter<C extends Avatar> extends BattleUnit<C>
     implements Unit {
   final C character;
-  int energy;
+  double energy;
 
   @override
   get currentState => character.currentState;
 
   BattleCharacter(
     this.character, {
-    int? hp,
-    int? energy,
-  })  : energy = energy ?? (character.staticStats.maxEnergy * 0.5).toInt(),
+    double? hp,
+    double? energy,
+  })  : energy = energy ?? (character.staticStats.maxEnergy * 0.5),
         super(character) {
     hp = hp ?? character.currentState.maxHp.modifiedValue;
   }
 
-  void gainEnergy(int eg) {
-    energy +=
-        (eg * (1 + character.currentState.energyEffect.modifiedValue)).toInt();
+  void onJoinBattle(BattleContext ctx);
+
+  void gainEnergy(double eg) {
+    energy += eg * character.currentState.energyEffect.modifiedValue;
     if (energy > character.staticStats.maxEnergy) {
       energy = character.staticStats.maxEnergy;
     }
@@ -91,6 +123,12 @@ abstract base class BattleCharacter<C extends Character> extends BattleUnit<C>
 
   Ability getAbility(String id) {
     return character.abilities.firstWhere((a) => a.id == id);
+  }
+
+  @override
+  DefenderDamageDetail takeDamage(AttackerDamageDetail damage) {
+    // TODO: implement takeDamage
+    throw UnimplementedError();
   }
 
   @override
@@ -134,15 +172,17 @@ enum CharacterPath implements EnumValue<int> {
 
   @override
   toJson() => value;
+
+  factory CharacterPath.fromJson(int value) =>
+      values.firstWhere((e) => e.value == value);
 }
 
-abstract base class CharacterStaticStats extends UnitStaticStats
-    implements JsonSerializable {
+class CharacterStaticStats extends UnitStaticStats implements JsonSerializable {
   /// 等级
   final int level;
 
   /// 生命值
-  final int maxHp;
+  final double maxHp;
 
   /// 攻击力
   final double atk;
@@ -160,10 +200,10 @@ abstract base class CharacterStaticStats extends UnitStaticStats
   final double crtDmg;
 
   /// 嘲讽值
-  final int taunt;
+  final double taunt;
 
   /// 能量
-  final int maxEnergy;
+  final double maxEnergy;
 
   const CharacterStaticStats({
     required this.level,
@@ -176,6 +216,20 @@ abstract base class CharacterStaticStats extends UnitStaticStats
     required this.taunt,
     required this.maxEnergy,
   }) : super();
+
+  factory CharacterStaticStats.fromJson(Map<String, dynamic> json) {
+    return CharacterStaticStats(
+      level: json['level'],
+      maxHp: json['maxHp'],
+      atk: json['atk'],
+      def: json['def'],
+      spd: (json['spd'] as num).toDouble(),
+      crt: json['crt'],
+      crtDmg: json['crtDmg'],
+      taunt: json['taunt'],
+      maxEnergy: json['maxEnergy'],
+    );
+  }
 
   @override
   toJson() {
@@ -208,7 +262,7 @@ class CharacterCurrentState<S extends CharacterStaticStats>
   final LinearModifiableValue<double> breakEffect;
 
   /// 治疗量加成
-  final LinearModifiableValue<double> healEffect;
+  final LinearModifiableValue<double> healBuff;
 
   /// 能量恢复效率
   final LinearModifiableValue<double> energyEffect;
@@ -224,17 +278,23 @@ class CharacterCurrentState<S extends CharacterStaticStats>
   final combatTypeResistance = CombatTypeResistance();
 
   // 隐藏属性
-  final LinearModifiableValue<int> taunt;
+  final LinearModifiableValue<double> taunt;
+
+  int eidolonLevel = 0;
 
   CharacterCurrentState(S staticStat)
       : atk = LinearModifiableValue(staticStat.atk),
         def = LinearModifiableValue(staticStat.def),
         spd = LinearModifiableValue(staticStat.spd),
-        crt = LinearModifiableValue(0),
-        crtDmg = LinearModifiableValue(0),
+        crt = LinearModifiableValue(
+          staticStat.crt,
+          minValue: 0.0,
+          maxValue: 1.0,
+        ),
+        crtDmg = LinearModifiableValue(staticStat.crtDmg, minValue: 0.0),
         breakEffect = LinearModifiableValue(0),
-        healEffect = LinearModifiableValue(0),
-        energyEffect = LinearModifiableValue(0),
+        healBuff = LinearModifiableValue(0),
+        energyEffect = LinearModifiableValue(1.0),
         effectHitRate = LinearModifiableValue(0),
         effectResistance = LinearModifiableValue(0),
         taunt = LinearModifiableValue(staticStat.taunt),
@@ -242,27 +302,39 @@ class CharacterCurrentState<S extends CharacterStaticStats>
 
   @override
   toJson() {
-    return {
-      'maxHp': [maxHp.originalValue, maxHp.modifiedValue],
-      'atk': [atk.originalValue, atk.modifiedValue],
-      'def': [def.originalValue, def.modifiedValue],
-      'spd': [spd.originalValue, spd.modifiedValue],
-      'crt': [crt.originalValue, crt.modifiedValue],
-      'crtDmg': [crtDmg.originalValue, crtDmg.modifiedValue],
-      'breakEffect': [breakEffect.originalValue, breakEffect.modifiedValue],
-      'healEffect': [healEffect.originalValue, healEffect.modifiedValue],
-      'energyEffect': [energyEffect.originalValue, energyEffect.modifiedValue],
-      'effectHitRate': [
-        effectHitRate.originalValue,
-        effectHitRate.modifiedValue
-      ],
-      'effectResistance': [
-        effectResistance.originalValue,
-        effectResistance.modifiedValue
-      ],
-      'combatTypeBuff': combatTypeBuff.toJson(),
-      'combatTypeResistance': combatTypeResistance.toJson(),
-      'taunt': [taunt.originalValue, taunt.modifiedValue],
-    };
+    return JsonSerializable.auto({
+      'maxHp': maxHp,
+      'atk': atk,
+      'def': def,
+      'spd': spd,
+      'crt': crt,
+      'crtDmg': crtDmg,
+      'breakEffect': breakEffect,
+      'healEffect': healBuff,
+      'energyEffect': energyEffect,
+      'effectHitRate': effectHitRate,
+      'effectResistance': effectResistance,
+      'combatTypeBuff': combatTypeBuff,
+      'combatTypeResistance': combatTypeResistance,
+      'taunt': taunt,
+    });
   }
+}
+
+enum CharacterId implements EnumValue<String> {
+  unknown("C00000"),
+  trailblazerDestruction("C10001"),
+
+  acheron("C21001"),
+  ;
+
+  @override
+  final String value;
+  const CharacterId(this.value);
+
+  @override
+  String toJson() => value;
+
+  factory CharacterId.fromJson(String value) =>
+      values.firstWhere((e) => e.value == value);
 }

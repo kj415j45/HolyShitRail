@@ -30,15 +30,9 @@ final class TrailblazerDNormalAttack<U extends TrailblazerDBattleCharacter>
   void cast(BattleContext context, Unit target) {
     final enemy = target as BattleEnemy;
     final damage = owner.character.currentState.atk.modifiedValue * damageRate;
-    final damageDetail = AttackerDamageDetail(
-      base: damage,
-      critRate: owner.character.currentState.crt.modifiedValue,
-      critDamage: owner.character.currentState.crtDmg.modifiedValue,
+    final damageDetail = owner.character.calculateDamage(
+      baseDamage: damage,
       damageTypes: [DamageType.normalAttack],
-      combatType: CombatType.physical,
-      combatTypeBuff: owner.character.currentState.combatTypeBuff.getBuff(
-        CombatType.physical,
-      ),
     );
     context.dispatch(
       DamageEvent(

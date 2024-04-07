@@ -22,17 +22,28 @@ final class HitEvent extends BattleEvent {
       : super(BattleEventType.unitAttackHit, source, target);
 }
 
-final class DamageEvent extends BattleEvent {
+final class DamageEvent extends BattleEvent<DamageTable> {
   DamageEvent(
     Unit source,
     List<Unit> target,
-    DamageTable damage, {
-    damageType = const [],
-    toughnessDamage = 0,
-  }) : super(
+    DamageTable damage,
+  ) : super(
           BattleEventType.unitDamage,
           source,
           target,
+          BattleEventPayload(damage),
+        );
+}
+
+final class TakeDamageEvent extends BattleEvent<DefenderDamageDetail> {
+  TakeDamageEvent(
+    Unit source,
+    Unit target,
+    DefenderDamageDetail damage,
+  ) : super(
+          BattleEventType.unitTakeDamage,
+          source,
+          [target],
           BattleEventPayload(damage),
         );
 }

@@ -1,17 +1,16 @@
-import 'package:holyshitrail/game/base_definitions.dart';
 import 'package:holyshitrail/game/characters/character.dart';
 
-final class TemplateCharacter extends Character {
-  TemplateCharacter()
-      : super(
-          path: CharacterPath.destruction,
-          combatType: CombatType.physical,
-          id: 'template',
-          name: 'template',
-          staticStats: const TemplateCharacterStaticStats(),
-        ) {
+final class TemplateCharacter extends Avatar {
+  TemplateCharacter({
+    super.id = CharacterId.unknown,
+    super.name = 'Template',
+    super.staticStats = const TemplateCharacterStaticStats(),
+    required super.path,
+    required super.combatType,
+  }) {
     currentState = TemplateCharacterCurrentState(
-        staticStats as TemplateCharacterStaticStats);
+      staticStats as TemplateCharacterStaticStats,
+    );
     abilities.addAll([
       // TODO add abilities
     ]);

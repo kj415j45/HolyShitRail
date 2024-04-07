@@ -3,31 +3,29 @@ import 'package:holyshitrail/game/base_definitions.dart';
 
 final atk = LinearModifiableValue<double>(100);
 
-final atkBuff =
-    LinearValueModifier<double>.fromFunction((value) => value * 0.1);
-final atkDebuff = LinearValueModifier<double>.fromFunction((value) => -1);
-final complexAtkBuff =
-    LinearValueModifier<double>.fromFunction((value) => value * 0.1 + 5);
+final atkBuff = LinearValueModifier<double>.from("10%");
+final atkDebuff = LinearValueModifier<double>.from("-1");
+final complexAtkBuff = LinearValueModifier<double>.from("+10% +5");
 
 void main() {
   test("Linear Modifiable Value", () {
-    expect(atk.originalValue, 100);
-    expect(atk.modifiedValue, 100);
+    expect(atk.originalValue, closeTo(100, 0.0001));
+    expect(atk.modifiedValue, closeTo(100, 0.0001));
 
     atk + atkBuff;
-    expect(atk.modifiedValue, 110);
+    expect(atk.modifiedValue, closeTo(110, 0.0001));
     atk - atkBuff;
 
     atk + atkDebuff;
-    expect(atk.modifiedValue, 99);
+    expect(atk.modifiedValue, closeTo(99, 0.0001));
 
     atk + complexAtkBuff;
-    expect(atk.modifiedValue, 114);
+    expect(atk.modifiedValue, closeTo(114, 0.0001));
 
     atk - complexAtkBuff;
-    expect(atk.modifiedValue, 99);
+    expect(atk.modifiedValue, closeTo(99, 0.0001));
 
     atk - atkDebuff;
-    expect(atk.modifiedValue, 100);
+    expect(atk.modifiedValue, closeTo(100, 0.0001));
   });
 }
